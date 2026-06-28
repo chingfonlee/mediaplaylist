@@ -8,6 +8,16 @@
 
 MediaPlaylist is a single-file local media launcher with a card-based playlist UI. It runs a small HTTP server on your machine and opens in any browser — no installation required beyond Python.
 
+### Screenshots
+
+**Card mode** — groups in the top bar, each card holds one media file
+
+![Card mode](docs/screenshots/01-card-mode.png)
+
+**First run** — no folder added yet; the app guides you to the next step
+
+![First run](docs/screenshots/02-media-browser.png)
+
 ### What it does
 
 You create **groups** of **cards**. Each card holds one media file: a video, audio track, image, PDF, or document. Click a card to play it. Drag a file from your file manager onto a card to assign it instantly.
@@ -21,7 +31,7 @@ Everything stays on your local machine. No accounts, no cloud, no internet conne
 - In-browser playback for video, audio, images, and PDF
 - External open for PowerPoint, Word, Excel, and other documents
 - Custom thumbnails with 9-point focus control
-- Group management: add, rename, reorder, multi-delete
+- Group management: add, rename, multi-delete
 - Background image per group
 - Media browser with search, type filter, and folder scanning
 - Task playlist sidebar for sequential playback
@@ -55,10 +65,10 @@ pip install pillow pymupdf
 
 ### First use
 
-1. Click **Add folder** to point the app at a folder containing your media files.
-2. Switch to **Card mode** using the button in the top bar.
-3. Drag a file from the browser panel onto a card, or click ✏ to pick a file.
-4. Click the card to play.
+1. The app opens in **Card mode** by default. Click **✏** on any card to assign a file.
+2. To browse your media library first, click the **MediaPlaylist** logo to toggle back to the browser view, then click **Add folder** to scan a folder.
+3. Drag any file from the browser panel onto a card to assign it.
+4. Click a card to play.
 
 ### Configuration
 
@@ -69,6 +79,16 @@ Settings are saved automatically to `config.json` in the same folder (developmen
 ## 中文
 
 MediaPlaylist 是一個單檔本地媒體播放器，採用卡片式播放清單介面。它在你的電腦上啟動一個小型 HTTP 伺服器，用任何瀏覽器開啟即可使用，除了 Python 之外不需要安裝任何東西。
+
+### 截圖
+
+**卡片模式** — 群組顯示在頂欄，每張卡片對應一個媒體檔案
+
+![卡片模式](docs/screenshots/01-card-mode.png)
+
+**第一次啟動** — 尚未新增資料夾時的引導畫面
+
+![第一次啟動](docs/screenshots/02-media-browser.png)
 
 ### 這個程式做什麼
 
@@ -83,7 +103,7 @@ MediaPlaylist 是一個單檔本地媒體播放器，採用卡片式播放清單
 - 瀏覽器內播放影片、音訊、圖片與 PDF
 - PowerPoint、Word、Excel 等文件以外部程式開啟
 - 自訂縮圖，支援 9 點焦點位置控制
-- 群組管理：新增、改名、排序、批次刪除
+- 群組管理：新增、改名、批次刪除
 - 每個群組可設定獨立背景圖
 - 媒體瀏覽器含搜尋、類型篩選與資料夾掃描
 - 任務播放清單側欄，支援循序播放
@@ -117,9 +137,9 @@ pip install pillow pymupdf
 
 ### 第一次使用
 
-1. 點擊右上角**新增資料夾**，指向你存放媒體檔案的資料夾。
-2. 點擊頂欄的**卡片模式**按鈕切換到卡片介面。
-3. 從瀏覽器面板把檔案拖到卡片上，或點擊 ✏ 手動選擇檔案。
+1. 程式預設以**卡片模式**開啟。點擊任一卡片上的 **✏** 即可指定媒體檔案。
+2. 若想先瀏覽媒體庫，點擊頂欄 **MediaPlaylist** 標誌切換到瀏覽器模式，再點**新增資料夾**掃描你的資料夾。
+3. 從瀏覽器面板把檔案拖到卡片上，或點擊 ✏ 手動選擇。
 4. 點擊卡片即可播放。
 
 ### 設定儲存位置
