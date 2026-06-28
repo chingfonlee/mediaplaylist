@@ -1,16 +1,16 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-媒體啟動器 - 本機媒體瀏覽與開啟工具
-雙擊 啟動.bat 即可使用
+MediaPlaylist - local media playlist launcher
+Run this script to launch the local media playlist app.
 """
-import http.server, json, os, subprocess, urllib.parse
+import http.server, json, os, subprocess, urllib.parse, re
 import hashlib, threading, webbrowser, time, sys, socket, secrets
 import urllib.request
 from pathlib import Path
 
 PORT     = 8765
-APP_NAME = "MediaLauncher"
+APP_NAME = "MediaPlaylist"
 
 # ── Runtime paths ────────────────────────────────────────────────────
 def app_dir() -> Path:
@@ -162,16 +162,16 @@ def new_card_group_id(existing_ids=()):
         if gid not in existing:
             return gid
 
-def default_card_group(name='群組 1'):
+def default_card_group(name='Group 1'):
     return {
         'id':              new_card_group_id(),
-        'name':            (name or '群組 1')[:30],
+        'name':            (name or 'Group 1')[:30],
         'card_count':      6,
         'card_background': '',
         'cards':           []
     }
 
-def normalize_card_group(group, fallback_name='群組 1'):
+def normalize_card_group(group, fallback_name='Group 1'):
     name = str(group.get('name', '')).strip()[:30]
     gid  = str(group.get('id') or '')
     return {
@@ -188,10 +188,10 @@ def migrate_cards_cfg(cfg):
     Returns (cfg, was_migrated).
     """
     if 'card_groups' in cfg:
-        groups = [normalize_card_group(g, f'群組 {i+1}')
+        groups = [normalize_card_group(g, f'Group {i+1}')
                   for i, g in enumerate(cfg.get('card_groups') or [])]
         if not groups:
-            g = default_card_group('群組 1'); g['id'] = 'g_default'
+            g = default_card_group('Group 1'); g['id'] = 'g_default'
             groups = [g]
         ids    = {g['id'] for g in groups}
         active = cfg.get('card_active_group_id', '')
@@ -205,7 +205,7 @@ def migrate_cards_cfg(cfg):
     old_cards = cfg.get('cards', [])
     cfg['card_groups'] = [{
         'id':              'g_default',
-        'name':            '群組 1',
+        'name':            'Group 1',
         'card_count':      old_count,
         'card_background': cfg.get('card_background', ''),
         'cards':           old_cards if isinstance(old_cards, list) else []
@@ -217,6 +217,13 @@ def active_card_group(cfg):
     groups = cfg.get('card_groups') or []
     aid    = cfg.get('card_active_group_id', '')
     return next((g for g in groups if g['id'] == aid), groups[0] if groups else {})
+
+def english_group_name(name, fallback_index=1):
+    raw = str(name or '').strip()
+    m = re.match(r'^\u7fa4\u7d44\s*(\d+)$', raw)
+    if m:
+        return f'Group {m.group(1)}'
+    return raw or f'Group {fallback_index}'
 
 # ── Scan ─────────────────────────────────────────────────────────────
 def scan(dirs, recursive=False):
@@ -343,7 +350,7 @@ class H(http.server.BaseHTTPRequestHandler):
             if fp and Path(fp).exists():
                 try: open_file(fp); self.send_json({'ok': True})
                 except Exception as e: self.send_json({'ok':False,'err':str(e)})
-            else: self.send_json({'ok':False,'err':'找不到檔案'})
+            else: self.send_json({'ok':False,'err':'File not found'})
 
         elif p == '/api/reveal':
             fp = q.get('path',[''])[0]
@@ -391,7 +398,7 @@ class H(http.server.BaseHTTPRequestHandler):
                 root = tk.Tk()
                 root.withdraw()
                 root.wm_attributes('-topmost', 1)
-                folder = filedialog.askdirectory(title='選擇要加入的媒體資料夾')
+                folder = filedialog.askdirectory(title='Choose a media folder to add')
                 root.destroy()
                 if folder:
                     folder = str(Path(folder))  # normalize slashes
@@ -404,8 +411,13 @@ class H(http.server.BaseHTTPRequestHandler):
         elif p == '/api/cards':
             cfg = load_cfg()
             ag  = active_card_group(cfg)
+            groups = []
+            for i, g in enumerate(cfg.get('card_groups', [])):
+                gg = dict(g)
+                gg['name'] = english_group_name(gg.get('name'), i + 1)
+                groups.append(gg)
             self.send_json({
-                'card_groups':          cfg.get('card_groups', []),
+                'card_groups':          groups,
                 'card_active_group_id': cfg.get('card_active_group_id', ''),
                 # backward-compatible projection of active group
                 'cards':           ag.get('cards', []),
@@ -494,16 +506,16 @@ class H(http.server.BaseHTTPRequestHandler):
                 root = tk.Tk(); root.withdraw()
                 root.wm_attributes('-topmost', 1)
                 if mode == 'image':
-                    ft = [('圖片', '*.jpg *.jpeg *.png *.gif *.bmp *.webp *.tiff *.tif'),
-                          ('所有檔案', '*.*')]
+                    ft = [('Images', '*.jpg *.jpeg *.png *.gif *.bmp *.webp *.tiff *.tif'),
+                          ('All files', '*.*')]
                 else:
-                    ft = [('媒體檔案',
+                    ft = [('Media files',
                            '*.mp4 *.mkv *.avi *.mov *.webm *.m4v *.wmv *.flv '
                            '*.mp3 *.wav *.flac *.aac *.ogg *.m4a *.opus '
                            '*.pdf *.ppt *.pptx *.doc *.docx *.xls *.xlsx '
                            '*.jpg *.jpeg *.png *.gif *.bmp *.webp'),
-                          ('所有檔案', '*.*')]
-                path = filedialog.askopenfilename(title='選擇檔案', filetypes=ft)
+                          ('All files', '*.*')]
+                path = filedialog.askopenfilename(title='Choose file', filetypes=ft)
                 root.destroy()
                 if path:
                     self.send_json({'ok': True, 'path': str(Path(path))})
@@ -522,7 +534,7 @@ class H(http.server.BaseHTTPRequestHandler):
             name = q.get('name', ['dropped-file'])[0]
             n = int(self.headers.get('Content-Length', 0))
             if n <= 0:
-                self.send_json({'ok': False, 'err': '沒有收到檔案內容'}, 400); return
+                self.send_json({'ok': False, 'err': 'No file content received'}, 400); return
             dst = unique_import_path(name)
             try:
                 remaining = n
@@ -536,7 +548,7 @@ class H(http.server.BaseHTTPRequestHandler):
                 if remaining != 0:
                     try: dst.unlink()
                     except Exception: pass
-                    self.send_json({'ok': False, 'err': '檔案匯入不完整'}, 400); return
+                    self.send_json({'ok': False, 'err': 'File import was incomplete'}, 400); return
                 self.send_json({'ok': True, 'path': str(dst)})
             except Exception as e:
                 try:
@@ -556,7 +568,7 @@ class H(http.server.BaseHTTPRequestHandler):
                 if d not in cfg['dirs']: cfg['dirs'].append(d); save_cfg(cfg)
                 self.send_json({'ok':True,'dirs':cfg['dirs']})
             else:
-                self.send_json({'ok':False,'err':'目錄不存在: ' + d})
+                self.send_json({'ok':False,'err':'Folder does not exist: ' + d})
 
         elif u.path == '/api/dirs/remove':
             d = body.get('dir','')
@@ -581,7 +593,7 @@ class H(http.server.BaseHTTPRequestHandler):
         elif u.path == '/api/tasks/create':
             name = body.get('name','').strip()[:50]
             if not name:
-                self.send_json({'ok':False,'err':'名稱不可為空'}); return
+                self.send_json({'ok':False,'err':'Name cannot be empty'}); return
             data = load_tasks()
             tid  = new_task_id(data['tasks'])
             task = {'id':tid,'name':name,'currentIndex':-1,'items':[]}
@@ -595,7 +607,7 @@ class H(http.server.BaseHTTPRequestHandler):
             tid  = body.get('id','')
             name = body.get('name','').strip()[:50]
             if not name:
-                self.send_json({'ok':False,'err':'名稱不可為空'}); return
+                self.send_json({'ok':False,'err':'Name cannot be empty'}); return
             data = load_tasks()
             t = next((t for t in data['tasks'] if t['id']==tid), None)
             if not t:
@@ -648,10 +660,10 @@ class H(http.server.BaseHTTPRequestHandler):
             cfg = load_cfg()
             if 'card_groups' in body:
                 # New multi-group format
-                groups = [normalize_card_group(g, f'群組 {i+1}')
+                groups = [normalize_card_group(g, f'Group {i+1}')
                           for i, g in enumerate(body.get('card_groups') or [])]
                 if not groups:
-                    g = default_card_group('群組 1'); g['id'] = 'g_default'
+                    g = default_card_group('Group 1'); g['id'] = 'g_default'
                     groups = [g]
                 ids    = {g['id'] for g in groups}
                 active = body.get('card_active_group_id', '')
@@ -695,7 +707,7 @@ HTML = r"""<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>媒體啟動器</title>
+<title>MediaPlaylist</title>
 <style>
 :root{
   --bg:#f5f5f7; --surf:#ffffff; --surf2:#f2f2f7; --surf3:#e8e8ed;
@@ -1008,7 +1020,7 @@ body.resizing-task-sb{user-select:none;cursor:col-resize}
   box-shadow:0 0 0 3px rgba(0,122,255,.16), 0 14px 30px rgba(0,122,255,.14);
 }
 .task-item.current::after{
-  content:"目前播放";
+  content:"Now Playing";
   position:absolute;right:8px;top:8px;z-index:3;
   padding:3px 8px;border-radius:999px;
   font-size:11px;font-weight:800;letter-spacing:.02em;
@@ -1234,7 +1246,7 @@ body.resizing-task-sb{user-select:none;cursor:col-resize}
 ::-webkit-scrollbar-thumb{background:#c7c7cc;border-radius:999px;border:3px solid transparent;background-clip:content-box}
 ::-webkit-scrollbar-thumb:hover{background:var(--muted)}
 
-/* ── 卡片模式 ── */
+/* ── Card mode ── */
 .kcard-view{display:flex;flex-direction:column;height:100%}
 .kcard-controls{
   padding:13px 22px;background:rgba(255,255,255,.9);
@@ -1276,7 +1288,7 @@ body.resizing-task-sb{user-select:none;cursor:col-resize}
   box-shadow:0 22px 52px rgba(0,122,255,.18);
 }
 .kcard.kcard-drop-target::after{
-  content:"放開以設定播放檔案";
+  content:"Drop to set media file";
   position:absolute;inset:12px;z-index:4;
   display:flex;align-items:center;justify-content:center;
   border:2px solid rgba(0,122,255,.72);border-radius:18px;
@@ -1332,7 +1344,7 @@ body.resizing-task-sb{user-select:none;cursor:col-resize}
 .kcard:hover .kcard-edit-btn{opacity:1}
 .kcard-edit-btn:hover{background:#fff !important;transform:none !important}
 
-/* ── 卡片編輯 modal ── */
+/* ── Card editor modal ── */
 .kc-modal-overlay{
   position:fixed;inset:0;z-index:800;
   background:rgba(0,0,0,.42);backdrop-filter:blur(6px);
@@ -1448,7 +1460,7 @@ body.resizing-task-sb{user-select:none;cursor:col-resize}
 }
 .kc-danger-btn:hover{color:#d70015;transform:none}
 
-/* ── 群組分頁列 ── */
+/* ── Group tabs ── */
 .kcard-group-row{
   display:flex;align-items:center;justify-content:space-between;
   padding:10px 22px 0;
@@ -1497,10 +1509,10 @@ body.resizing-task-sb{user-select:none;cursor:col-resize}
   background:rgba(255,59,48,.08);color:var(--red);
   border-color:rgba(255,59,48,.2);transform:none;
 }
-/* controls 緊接在群組列之後，移除重複的 border-bottom */
+/* controls sit after the group row; avoid duplicate border-bottom */
 .kcard-group-row + .kcard-controls{border-bottom:1px solid rgba(0,0,0,.08)}
 
-/* ── 卡片展示播放層 ── */
+/* ── Card player overlay ── */
 .kc-player{
   position:fixed;inset:0;z-index:1150;padding:88px 24px 24px;
   background:rgba(0,0,0,.08);border-radius:0;
@@ -1585,61 +1597,61 @@ body.resizing-task-sb{user-select:none;cursor:col-resize}
 <!-- Top bar -->
 <div class="topbar">
   <span class="logo" aria-hidden="true"><span class="logo-play"></span></span>
-  <span class="logo-text">媒體啟動器</span>
+  <span class="logo-text">MediaPlaylist</span>
 
   <div class="topbar-card-groups hidden" id="topbarCardGroups"></div>
 
   <div class="search-wrap advanced-tool hidden">
     <span class="si">🔍</span>
-    <input type="text" id="search" placeholder="搜尋檔案名稱..." oninput="filterRender()">
+    <input type="text" id="search" placeholder="Search file names..." oninput="filterRender()">
   </div>
 
   <div class="tabs advanced-tool hidden" id="tabs">
-    <button class="tab active" data-type="all"   onclick="setTab(this)">全部</button>
-    <button class="tab" data-type="video" onclick="setTab(this)">🎬 影片</button>
-    <button class="tab" data-type="audio" onclick="setTab(this)">🎵 音樂</button>
-    <button class="tab" data-type="image" onclick="setTab(this)">🖼 圖片</button>
-    <button class="tab" data-type="pdf"   onclick="setTab(this)">📄 PDF</button>
-    <button class="tab" data-type="ppt"   onclick="setTab(this)">📊 簡報</button>
-    <button class="tab" data-type="doc"   onclick="setTab(this)">📝 文件</button>
+    <button class="tab active" data-type="all"   onclick="setTab(this)">All</button>
+    <button class="tab" data-type="video" onclick="setTab(this)">Video</button>
+    <button class="tab" data-type="audio" onclick="setTab(this)">Audio</button>
+    <button class="tab" data-type="image" onclick="setTab(this)">Images</button>
+    <button class="tab" data-type="pdf"   onclick="setTab(this)">PDF</button>
+    <button class="tab" data-type="ppt"   onclick="setTab(this)">Presentations</button>
+    <button class="tab" data-type="doc"   onclick="setTab(this)">Documents</button>
   </div>
 
   <div class="topbar-right">
-    <button class="advanced-tool hidden" onclick="toggleFolders()" title="管理資料夾" id="folderToggleBtn">📁 資料夾</button>
-    <button class="advanced-tool hidden" onclick="toggleTaskSidebar()" title="任務播放清單" id="taskToggleBtn">📋 任務</button>
-    <button class="hidden" id="cardModeBtn" onclick="toggleCardMode()" title="卡片模式">🃏 卡片</button>
-    <button class="hidden" onclick="reload()" title="重新掃描" id="reloadBtn">⟳ 重新整理</button>
-    <button class="hidden" onclick="toggleAdvancedTools()" title="顯示或隱藏管理工具" id="settingsBtn">⚙ 設定</button>
+    <button class="advanced-tool hidden" onclick="toggleFolders()" title="Manage folders" id="folderToggleBtn">Folder</button>
+    <button class="advanced-tool hidden" onclick="toggleTaskSidebar()" title="Task playlist" id="taskToggleBtn">Tasks</button>
+    <button class="hidden" id="cardModeBtn" onclick="toggleCardMode()" title="Card mode">Cards</button>
+    <button class="hidden" onclick="reload()" title="Rescan" id="reloadBtn">Refresh</button>
+    <button class="hidden" onclick="toggleAdvancedTools()" title="Show or hide management tools" id="settingsBtn">Settings</button>
   </div>
 </div>
 
 <div class="folder-coachmark hidden" id="folderCoachmark">
-  <button class="coach-close" onclick="dismissFolderGuide()" title="關閉提示">×</button>
-  <div class="coach-kicker">開始使用</div>
-  <div class="coach-title" id="coachTitle">先加入媒體資料夾</div>
-  <div class="coach-text" id="coachText">先點右上角「設定」顯示管理工具，再點「資料夾」選擇放簡報、影片、音樂的資料夾。</div>
+  <button class="coach-close" onclick="dismissFolderGuide()" title="Close guide">×</button>
+  <div class="coach-kicker">Get started</div>
+  <div class="coach-title" id="coachTitle">Add a media folder first</div>
+  <div class="coach-text" id="coachText">Click Settings in the top-right to show management tools, then click Folder to choose where your presentations, videos, and audio are stored.</div>
 </div>
 
 <!-- Folder management bar -->
 <div class="folderbar hidden" id="folderbar">
   <div class="dir-list" id="dirList"></div>
   <div class="dir-actions">
-    <button class="btn-blue" id="browseBtn" onclick="browseAndAdd()">📂 加入資料夾</button>
-    <label class="dir-recursive" title="勾選後會掃描已加入資料夾底下所有子資料夾">
+    <button class="btn-blue" id="browseBtn" onclick="browseAndAdd()">📂 Add Folder</button>
+    <label class="dir-recursive" title="Scan all subfolders under added folders">
       <input type="checkbox" id="recursiveScan" onchange="setRecursiveScan(this.checked)">
-      包含子資料夾
+      Include subfolders
     </label>
     <span id="browseStatus" style="font-size:12px;color:var(--muted)"></span>
     <button class="btn-red" id="deleteBtn" onclick="deleteChecked()" disabled
-            style="margin-left:auto">🗑 刪除勾選的資料夾 (0)</button>
+            style="margin-left:auto">🗑 Delete selected folders (0)</button>
   </div>
 </div>
 
 <!-- Status -->
 <div class="statusbar hidden" id="statusbar">
-  <span class="stat-item">📂 <span id="statDirs">-</span> 個資料夾</span>
-  <span class="stat-item">📄 <span id="statTotal">-</span> 個檔案</span>
-  <span class="stat-item" id="statFiltered" style="display:none">🔎 顯示 <span id="statFilteredN">-</span> 個</span>
+  <span class="stat-item">📂 <span id="statDirs">-</span> folders</span>
+  <span class="stat-item">📄 <span id="statTotal">-</span> files</span>
+  <span class="stat-item" id="statFiltered" style="display:none">🔎 Showing <span id="statFilteredN">-</span> items</span>
 </div>
 
 <!-- Main area: grid + task sidebar -->
@@ -1649,7 +1661,7 @@ body.resizing-task-sb{user-select:none;cursor:col-resize}
   <div class="grid-area" id="gridArea">
     <div class="state-box">
       <div class="spinner"></div>
-      <div class="state-title">載入中…</div>
+      <div class="state-title">Loading...</div>
     </div>
   </div>
 
@@ -1657,27 +1669,27 @@ body.resizing-task-sb{user-select:none;cursor:col-resize}
   <div class="task-sidebar hidden" id="taskSidebar">
     <div class="task-resize-handle" id="taskResizeHandle"
          role="separator" aria-orientation="vertical"
-         aria-label="調整任務側欄寬度" title="拖曳調整寬度，雙擊恢復預設"></div>
+         aria-label="Resize task sidebar" title="Drag to resize; double-click to reset"></div>
     <div class="task-sb-header">
       <select id="taskSelect" onchange="switchTask(this.value)">
-        <option value="">（無任務）</option>
+        <option value="">(No task)</option>
       </select>
-      <button class="btn-task" onclick="promptCreateTask()" title="新增任務">＋</button>
+      <button class="btn-task" onclick="promptCreateTask()" title="New task">＋</button>
       <div class="task-menu-wrap">
-        <button class="btn-task" id="taskMenuBtn" onclick="toggleTaskMenu(event)" title="任務選項">⋯</button>
+        <button class="btn-task" id="taskMenuBtn" onclick="toggleTaskMenu(event)" title="Task options">⋯</button>
         <div class="task-menu hidden" id="taskMenu">
-          <button onclick="promptRenameTask()">✏ 改名</button>
-          <button class="danger" onclick="confirmDeleteTask()">🗑 刪除此任務</button>
+          <button onclick="promptRenameTask()">✏ Rename</button>
+          <button class="danger" onclick="confirmDeleteTask()">🗑 Delete this task</button>
         </div>
       </div>
     </div>
     <div class="task-list" id="taskList">
-      <div class="task-empty" id="taskEmpty">拖曳左側媒體卡片到此處加入清單</div>
+      <div class="task-empty" id="taskEmpty">Drag media cards here to build the playlist</div>
     </div>
     <div class="task-sb-footer">
-      <button class="btn-task" id="playCurrentBtn" onclick="playCurrentItem()" disabled>▶ 播放目前</button>
-      <button class="btn-task" id="playNextBtn" onclick="playNextItem()" disabled>▶▶ 下一個</button>
-      <span class="count" id="taskCount">0 項</span>
+      <button class="btn-task" id="playCurrentBtn" onclick="playCurrentItem()" disabled>▶ Play current</button>
+      <button class="btn-task" id="playNextBtn" onclick="playNextItem()" disabled>▶▶ Next</button>
+      <span class="count" id="taskCount">0 items</span>
     </div>
   </div>
 
@@ -1688,63 +1700,63 @@ body.resizing-task-sb{user-select:none;cursor:col-resize}
      onclick="if(event.target===this)closeKcModal()">
   <div class="kc-modal-box">
     <div class="kc-modal-hdr">
-      <span class="kc-modal-title" id="kcModalTitle">編輯卡片</span>
+      <span class="kc-modal-title" id="kcModalTitle">Edit Card</span>
       <button class="kc-modal-close" onclick="closeKcModal()">×</button>
     </div>
 
     <div class="kc-field-group">
-      <div class="kc-field-label">標題（留空則自動顯示檔名）</div>
-      <input type="text" class="kc-text-input" id="kcEdit-title" placeholder="卡片標題（選填）">
+      <div class="kc-field-label">Title (leave blank to use file name)</div>
+      <input type="text" class="kc-text-input" id="kcEdit-title" placeholder="Card title (optional)">
     </div>
 
     <div class="kc-field-group">
-      <div class="kc-field-label">播放檔案</div>
+      <div class="kc-field-label">Media file</div>
       <div class="kc-field-row">
-        <input type="text" class="kc-path-input" id="kcEdit-file" readonly placeholder="尚未選擇">
-        <button class="kc-copy-btn" onclick="copyKcPath('file')" title="複製播放檔案路徑">⧉</button>
-        <button class="kc-pick-btn" onclick="kcBrowse(this,'file')" title="選擇播放檔案" aria-label="選擇播放檔案"><span class="kc-file-icon"></span></button>
+        <input type="text" class="kc-path-input" id="kcEdit-file" readonly placeholder="Not selected">
+        <button class="kc-copy-btn" onclick="copyKcPath('file')" title="Copy media file path">⧉</button>
+        <button class="kc-pick-btn" onclick="kcBrowse(this,'file')" title="Choose media file" aria-label="Choose media file"><span class="kc-file-icon"></span></button>
       </div>
     </div>
 
     <div class="kc-field-group">
-      <div class="kc-field-label">縮圖（選填，不填則自動產生）</div>
+      <div class="kc-field-label">Thumbnail (optional, auto-generated if blank)</div>
       <div class="kc-field-row">
-        <input type="text" class="kc-path-input" id="kcEdit-thumb" readonly placeholder="尚未選擇">
-        <button class="kc-copy-btn" onclick="copyKcPath('thumbnail')" title="複製縮圖路徑">⧉</button>
-        <button class="kc-pick-btn" onclick="kcBrowse(this,'thumbnail')" title="選擇縮圖" aria-label="選擇縮圖"><span class="kc-file-icon"></span></button>
+        <input type="text" class="kc-path-input" id="kcEdit-thumb" readonly placeholder="Not selected">
+        <button class="kc-copy-btn" onclick="copyKcPath('thumbnail')" title="Copy thumbnail path">⧉</button>
+        <button class="kc-pick-btn" onclick="kcBrowse(this,'thumbnail')" title="Choose thumbnail" aria-label="Choose thumbnail"><span class="kc-file-icon"></span></button>
       </div>
       <div class="kc-preview-row">
-        <img class="kc-preview-img" id="kcPrev-thumb" alt="縮圖預覽">
-        <button class="kc-clear-btn" onclick="kcClearField('thumbnail')">清除縮圖</button>
+        <img class="kc-preview-img" id="kcPrev-thumb" alt="Thumbnail preview">
+        <button class="kc-clear-btn" onclick="kcClearField('thumbnail')">Clear thumbnail</button>
       </div>
       <div class="kc-position-panel">
         <div class="kc-position-copy">
-          <div class="kc-position-title">縮圖焦點</div>
-          <div class="kc-position-hint">直式圖片可選上方或下方，讓主體留在卡片內。</div>
+          <div class="kc-position-title">Thumbnail focus</div>
+          <div class="kc-position-hint">For portrait images, choose top or bottom to keep the subject inside the card.</div>
         </div>
         <div class="kc-position-grid" id="kcThumbPositionGrid"></div>
       </div>
     </div>
 
     <div class="kc-modal-footer">
-      <button class="kc-danger-btn" onclick="clearKcCard()">🗑 清除此卡片</button>
-      <button onclick="closeKcModal()">取消</button>
-      <button class="btn-blue" onclick="saveKcCard()">儲存</button>
+      <button class="kc-danger-btn" onclick="clearKcCard()">🗑 Clear this card</button>
+      <button onclick="closeKcModal()">Cancel</button>
+      <button class="btn-blue" onclick="saveKcCard()">Save</button>
     </div>
   </div>
 </div>
 
 <div class="kc-player hidden" id="kcPlayer" onmousemove="showKcPlayerControls()" onclick="handleKcPlayerBackdropClick(event)">
-  <button class="kc-player-nav prev" onclick="playAdjacentKCard(-1)" title="上一個">‹</button>
-  <button class="kc-player-nav next" onclick="playAdjacentKCard(1)" title="下一個">›</button>
+  <button class="kc-player-nav prev" onclick="playAdjacentKCard(-1)" title="Previous">‹</button>
+  <button class="kc-player-nav next" onclick="playAdjacentKCard(1)" title="Next">›</button>
   <div class="kc-player-stage" id="kcPlayerStage"></div>
   <div class="kc-player-bar">
-    <button class="kc-player-btn" onclick="playAdjacentKCard(-1)">← 上一個</button>
-    <div class="kc-player-title" id="kcPlayerTitle">未播放</div>
-    <button class="kc-player-btn" onclick="openCurrentKCardExternal()">外部開啟</button>
-    <button class="kc-player-btn" id="kcFullscreenBtn" onclick="toggleKCardFullscreen()">全螢幕</button>
-    <button class="kc-player-btn" onclick="playAdjacentKCard(1)">下一個 →</button>
-    <button class="kc-player-btn kc-player-close" onclick="closeKCardPlayer()">關閉</button>
+    <button class="kc-player-btn" onclick="playAdjacentKCard(-1)">← Previous</button>
+    <div class="kc-player-title" id="kcPlayerTitle">Not playing</div>
+    <button class="kc-player-btn" onclick="openCurrentKCardExternal()">Open externally</button>
+    <button class="kc-player-btn" id="kcFullscreenBtn" onclick="toggleKCardFullscreen()">Fullscreen</button>
+    <button class="kc-player-btn" onclick="playAdjacentKCard(1)">Next →</button>
+    <button class="kc-player-btn kc-player-close" onclick="closeKCardPlayer()">Close</button>
   </div>
 </div>
 
@@ -1851,11 +1863,11 @@ function renderTaskItemCompact(item, i, currentIndex, nextIndex) {
   const folderSpan = folder
     ? `<span class="ti-folder" title="${escHtml(item.path)}">${escHtml(folder)}</span>`
     : '';
-  const warnHtml = missing ? '<span class="ti-warn">未在目前清單中</span>' : '';
+  const warnHtml = missing ? '<span class="ti-warn">Not in current list</span>' : '';
   const statusHtml = isCurrent
-    ? '<span class="ti-status is-current">目前</span>'
+    ? '<span class="ti-status is-current">Current</span>'
     : isNext
-      ? '<span class="ti-status is-next">下一個</span>'
+      ? '<span class="ti-status is-next">Next</span>'
       : '';
 
   return `<div class="task-item${stateClass}${missClass}" data-index="${i}" draggable="true"
@@ -1874,7 +1886,7 @@ function renderTaskItemCompact(item, i, currentIndex, nextIndex) {
       <div class="ti-meta">${badge}${folderSpan}${warnHtml}${statusHtml}</div>
     </div>
     <span class="ti-remove" onclick="removeTaskItem(event,${i})"
-          ondragstart="event.stopPropagation()" title="從清單移除">✕</span>
+          ondragstart="event.stopPropagation()" title="Remove from list">✕</span>
   </div>`;
 }
 // ── Task state ────────────────────────────────────────────────────
@@ -1908,7 +1920,7 @@ function applyAdvancedToolsVisibility() {
   const settingsBtn = document.getElementById('settingsBtn');
   if (settingsBtn) {
     settingsBtn.classList.toggle('active', advancedToolsVisible);
-    settingsBtn.title = advancedToolsVisible ? '隱藏管理工具' : '顯示管理工具';
+    settingsBtn.title = advancedToolsVisible ? 'Hide management tools' : 'Show management tools';
   }
 
   if (!advancedToolsVisible) {
@@ -1987,11 +1999,11 @@ function updateFolderGuide() {
   const title = document.getElementById('coachTitle');
   const text = document.getElementById('coachText');
   if (folderbarOpen) {
-    title.textContent = '選擇放媒體的資料夾';
-    text.textContent = '按「加入資料夾」選取簡報、影片、音樂所在位置。若資料分散在子資料夾，也可以勾選「包含子資料夾」。';
+    title.textContent = 'Choose a media folder';
+    text.textContent = 'Click Add Folder to choose where your presentations, videos, and audio are stored. Enable Include subfolders if your media is organized in subfolders.';
   } else {
-    title.textContent = '先開啟設定，再加入資料夾';
-    text.textContent = '點右上角「設定」顯示管理工具，再點「資料夾」選擇放簡報、影片、音樂的資料夾。';
+    title.textContent = 'Open Settings, then add a folder';
+    text.textContent = 'Click Settings in the top-right to show management tools, then click Folder to choose your media folder.';
   }
 
   const rect = target.getBoundingClientRect();
@@ -2008,7 +2020,7 @@ function updateFolderGuide() {
 // ── Load files ────────────────────────────────────────────────────
 async function reload() {
   const btn = document.getElementById('reloadBtn');
-  if (btn) { btn.textContent = '⟳ 載入中…'; btn.disabled = true; }
+  if (btn) { btn.textContent = '⟳ Loading...'; btn.disabled = true; }
   try {
     const r = await fetch('/api/files?recursive=' + (recursiveScan ? '1' : '0'));
     const d = await r.json();
@@ -2030,10 +2042,10 @@ async function reload() {
     renderTaskSidebar();
     updateFolderGuide();
   } catch {
-    showGrid([]); toast('無法連線到伺服器', 'err');
+    showGrid([]); toast('Could not connect to the server', 'err');
     updateFolderGuide();
   }
-  if (btn) { btn.textContent = '⟳ 重新整理'; btn.disabled = false; }
+  if (btn) { btn.textContent = '⟳ Refresh'; btn.disabled = false; }
 }
 
 // ── Filter & render ───────────────────────────────────────────────
@@ -2071,10 +2083,10 @@ function showGrid(files) {
     area.innerHTML = `
       <div class="state-box">
         <div class="state-icon">🗂️</div>
-        <div class="state-title">沒有找到檔案</div>
+        <div class="state-title">No files found</div>
         <div class="state-sub">
-          主畫面以「群組 1」卡片為主。請點卡片右上角「✏」設定播放檔案；需要調整卡片數量或背景時，請點群組旁的「⋯」。<br>
-          支援：圖片、影片、音樂、PDF；簡報與文件會以外部程式開啟。
+          The main screen is card-first. Click an empty card to set media; use the edit button on filled cards. Use the group menu for card count and background.<br>
+          Supports images, videos, audio, and PDFs. Presentations and documents open in external apps.
         </div>
       </div>`;
     return;
@@ -2105,7 +2117,7 @@ function showGrid(files) {
     card.innerHTML = `
       <div class="card-thumb ph-${f.type}">
         ${thumbHtml}
-        <button class="card-reveal" onclick="reveal(event,'${esc(f.path)}')" title="在資料夾中顯示">📂</button>
+        <button class="card-reveal" onclick="reveal(event,'${esc(f.path)}')" title="Reveal in folder">📂</button>
       </div>
       <div class="card-body">
         <div class="card-name">${escHtml(f.stem)}</div>
@@ -2149,9 +2161,9 @@ async function openFile(path) {
   try {
     const r = await fetch('/api/open?path=' + encodeURIComponent(path));
     const d = await r.json();
-    if (!d.ok) toast('開啟失敗: ' + (d.err||''), 'err');
-    else toast('已開啟 ' + path.split('\\').pop(), 'ok');
-  } catch { toast('無法連線', 'err'); }
+    if (!d.ok) toast('Open failed: ' + (d.err||''), 'err');
+    else toast('Opened ' + path.split('\\').pop(), 'ok');
+  } catch { toast('Could not connect', 'err'); }
 }
 
 async function reveal(e, path) {
@@ -2169,7 +2181,7 @@ function toggleFolders() {
 function renderDirList() {
   const list = document.getElementById('dirList');
   if (!allDirs.length) {
-    list.innerHTML = '<div style="padding:6px 8px;color:var(--muted);font-size:13px">尚無資料夾，請點「加入資料夾」</div>';
+    list.innerHTML = '<div style="padding:6px 8px;color:var(--muted);font-size:13px">No folders yet. Click Add Folder.</div>';
     updateDeleteBtn(); return;
   }
   list.innerHTML = allDirs.map((d, i) => {
@@ -2186,7 +2198,7 @@ function renderDirList() {
 function updateDeleteBtn() {
   const n   = checkedDirs.size;
   const btn = document.getElementById('deleteBtn');
-  btn.textContent = `🗑 刪除勾選的資料夾 (${n})`;
+  btn.textContent = `🗑 Delete selected folders (${n})`;
   btn.disabled    = (n === 0);
 }
 
@@ -2206,10 +2218,10 @@ async function setRecursiveScan(on) {
     });
     const d = await r.json();
     if (!d.ok) throw new Error();
-    toast(recursiveScan ? '已開啟：包含子資料夾' : '已關閉：只掃描第一層', 'ok');
+    toast(recursiveScan ? 'Opened：Include subfolders' : 'Disabled: scan only the first level', 'ok');
     reload();
   } catch {
-    toast('無法儲存子資料夾設定', 'err');
+    toast('Could not save subfolder setting', 'err');
     recursiveScan = !recursiveScan;
     const recEl = document.getElementById('recursiveScan');
     if (recEl) recEl.checked = recursiveScan;
@@ -2219,27 +2231,27 @@ async function setRecursiveScan(on) {
 async function browseAndAdd() {
   const btn    = document.getElementById('browseBtn');
   const status = document.getElementById('browseStatus');
-  btn.disabled = true; btn.textContent = '⏳ 開啟中…'; status.textContent = '';
+  btn.disabled = true; btn.textContent = '⏳ Opening...'; status.textContent = '';
   try {
     const r = await fetch('/api/browse');
     const d = await r.json();
-    if (!d.ok || !d.path) { btn.disabled = false; btn.textContent = '📂 加入資料夾'; return; }
+    if (!d.ok || !d.path) { btn.disabled = false; btn.textContent = '📂 Add Folder'; return; }
     const r2 = await fetch('/api/dirs/add', {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({dir: d.path})
     });
     const d2 = await r2.json();
-    if (d2.ok) { toast('已加入：' + d.path, 'ok'); reload(); }
-    else        { toast(d2.err || '加入失敗', 'err'); }
-  } catch { toast('無法連線伺服器', 'err'); }
-  btn.disabled = false; btn.textContent = '📂 加入資料夾';
+    if (d2.ok) { toast('Added: ' + d.path, 'ok'); reload(); }
+    else        { toast(d2.err || 'Add failed', 'err'); }
+  } catch { toast('Could not connect to server', 'err'); }
+  btn.disabled = false; btn.textContent = 'Add Folder';
 }
 
 async function deleteChecked() {
   if (!checkedDirs.size) return;
   const toDelete = [...checkedDirs];
   const names    = toDelete.map(p => '・' + p).join('\n');
-  const msg      = `確定要從啟動器移除以下 ${toDelete.length} 個資料夾？\n\n${names}\n\n（電腦上的實際檔案不會被刪除）`;
+  const msg      = `Remove these ${toDelete.length} folders?\n\n${names}\n\n(The actual files on your computer will not be deleted.)`;
   if (!confirm(msg)) return;
   try {
     const r = await fetch('/api/dirs/remove-multiple', {
@@ -2249,10 +2261,10 @@ async function deleteChecked() {
     const d = await r.json();
     if (d.ok) {
       toDelete.forEach(dir => checkedDirs.delete(dir));
-      toast(`已移除 ${toDelete.length} 個資料夾`, 'ok');
+      toast(`Removed ${toDelete.length} folders`, 'ok');
       reload();
-    } else { toast(d.err || '刪除失敗', 'err'); }
-  } catch { toast('無法連線伺服器', 'err'); }
+    } else { toast(d.err || 'Delete failed', 'err'); }
+  } catch { toast('Could not connect to server', 'err'); }
 }
 
 // ── Task sidebar toggle ───────────────────────────────────────────
@@ -2407,7 +2419,7 @@ function renderTaskSidebar() {
 
   // Populate select
   sel.innerHTML = taskState.tasks.length === 0
-    ? '<option value="">（無任務）</option>'
+    ? '<option value="">(No task)</option>'
     : taskState.tasks.map(t =>
         `<option value="${t.id}" ${t.id===taskState.activeTaskId?'selected':''}>${escHtml(t.name)} (${t.items.length})</option>`
       ).join('');
@@ -2418,21 +2430,21 @@ function renderTaskSidebar() {
   if (!task) {
     list.innerHTML = '';
     list.appendChild(empty);
-    empty.textContent = '點「＋」建立第一個任務';
-    count.textContent = '0 項';
+    empty.textContent = 'Click + to create your first task';
+    count.textContent = '0 items';
     pcBtn.disabled = pnBtn.disabled = true;
     return;
   }
 
   const items = task.items;
-  count.textContent = `${items.length} 項`;
+  count.textContent = `${items.length} items`;
   pcBtn.disabled = items.length === 0;
   pnBtn.disabled = items.length === 0;
 
   if (items.length === 0) {
     list.innerHTML = '';
     empty.className = 'task-empty';
-    empty.textContent = '拖曳左側媒體卡片到此處加入清單';
+    empty.textContent = 'Drag media cards here to build the playlist';
     list.appendChild(empty);
     return;
   }
@@ -2445,7 +2457,7 @@ function renderTaskSidebar() {
 
 // ── Task CRUD ─────────────────────────────────────────────────────
 async function promptCreateTask() {
-  const name = prompt('新任務名稱：');
+  const name = prompt('New task name:');
   if (!name || !name.trim()) return;
   try {
     const r = await fetch('/api/tasks/create', {
@@ -2460,8 +2472,8 @@ async function promptCreateTask() {
       // ensure sidebar is open
       const sb = document.getElementById('taskSidebar');
       if (sb.classList.contains('hidden')) toggleTaskSidebar();
-    } else { toast(d.err || '建立失敗', 'err'); }
-  } catch { toast('無法連線', 'err'); }
+    } else { toast(d.err || 'Create failed', 'err'); }
+  } catch { toast('Could not connect', 'err'); }
 }
 
 async function switchTask(id) {
@@ -2474,14 +2486,14 @@ async function switchTask(id) {
     });
     taskState.activeTaskId = id;
     renderTaskSidebar();
-  } catch { toast('切換失敗', 'err'); }
+  } catch { toast('Switch failed', 'err'); }
 }
 
 async function promptRenameTask() {
   closeTaskMenu();
   const task = activeTask();
   if (!task) return;
-  const name = prompt('新名稱：', task.name);
+  const name = prompt('New name:', task.name);
   if (!name || !name.trim() || name.trim() === task.name) return;
   try {
     const r = await fetch('/api/tasks/rename', {
@@ -2490,15 +2502,15 @@ async function promptRenameTask() {
     });
     const d = await r.json();
     if (d.ok) { task.name = name.trim(); renderTaskSidebar(); }
-    else { toast(d.err || '改名失敗', 'err'); }
-  } catch { toast('無法連線', 'err'); }
+    else { toast(d.err || 'Rename failed', 'err'); }
+  } catch { toast('Could not connect', 'err'); }
 }
 
 async function confirmDeleteTask() {
   closeTaskMenu();
   const task = activeTask();
   if (!task) return;
-  if (!confirm(`確定刪除「${task.name}」？\n清單內容將一併移除，檔案本身不受影響。`)) return;
+  if (!confirm(`Delete "${task.name}"?\nThe playlist will be removed. Files themselves are not affected.`)) return;
   try {
     const r = await fetch('/api/tasks/delete', {
       method:'POST', headers:{'Content-Type':'application/json'},
@@ -2509,8 +2521,8 @@ async function confirmDeleteTask() {
       taskState.tasks = taskState.tasks.filter(t => t.id !== task.id);
       taskState.activeTaskId = d.activeTaskId;
       renderTaskSidebar();
-    } else { toast(d.err || '刪除失敗', 'err'); }
-  } catch { toast('無法連線', 'err'); }
+    } else { toast(d.err || 'Delete failed', 'err'); }
+  } catch { toast('Could not connect', 'err'); }
 }
 
 // ── Task item operations ──────────────────────────────────────────
@@ -2548,7 +2560,7 @@ function clearTaskDropState() {
 async function addItemToActiveTask(item, index=null) {
   const task = activeTask();
   if (!task) {
-    toast('請先建立或選擇任務', 'err');
+    toast('Create or select a task first', 'err');
     return;
   }
   const items = [...task.items];
@@ -2557,7 +2569,7 @@ async function addItemToActiveTask(item, index=null) {
     : items.length;
   items.splice(insertAt, 0, item);
   await saveItems(items);
-  toast('已加入：' + (item.stem || item.name), 'ok');
+  toast('Added: ' + (item.stem || item.name), 'ok');
 }
 
 function startTaskItemDrag(e, index) {
@@ -2634,7 +2646,7 @@ async function saveItems(items) {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({id: task.id, index: task.currentIndex})
     });
-  } catch { toast('儲存失敗', 'err'); }
+  } catch { toast('Save failed', 'err'); }
   renderTaskSidebar();
 }
 
@@ -2645,9 +2657,9 @@ async function playTaskItem(index) {
   try {
     const r = await fetch('/api/open?path=' + encodeURIComponent(item.path));
     const d = await r.json();
-    if (!d.ok) { toast('開啟失敗: ' + (d.err||''), 'err'); return; }
-    toast('已開啟 ' + (item.stem||item.name), 'ok');
-  } catch { toast('無法連線', 'err'); return; }
+    if (!d.ok) { toast('Open failed: ' + (d.err||''), 'err'); return; }
+    toast('Opened ' + (item.stem||item.name), 'ok');
+  } catch { toast('Could not connect', 'err'); return; }
   task.currentIndex = index;
   try {
     await fetch('/api/tasks/set-current', {
@@ -2703,13 +2715,13 @@ document.addEventListener('dragover', e => {
 document.addEventListener('drop', e => {
   if (isExternalFileDrag(e) && !e.target.closest('.kcard')) {
     e.preventDefault();
-    toast('請把檔案放到要設定的卡片上', 'err');
+    toast('Drop the file onto the card you want to set', 'err');
   }
 });
 document.addEventListener('fullscreenchange', () => {
   const btn = document.getElementById('kcFullscreenBtn');
   const player = document.getElementById('kcPlayer');
-  if (btn) btn.textContent = document.fullscreenElement === player ? '離開全螢幕' : '全螢幕';
+  if (btn) btn.textContent = document.fullscreenElement === player ? 'Exit fullscreen' : 'Fullscreen';
   showKcPlayerControls();
 });
 
@@ -2763,11 +2775,18 @@ function newKcGroupId() {
 function defaultKcGroup(name) {
   return {
     id:              newKcGroupId(),
-    name:            (name || '群組 1').slice(0, 30),
+    name:            (name || 'Group 1').slice(0, 30),
     card_count:      6,
     card_background: '',
     cards:           []
   };
+}
+
+function englishGroupName(name, fallbackIndex) {
+  const raw = String(name || '').trim();
+  const zh = raw.match(/^\u7fa4\u7d44\s*(\d+)$/);
+  if (zh) return 'Group ' + zh[1];
+  return raw || ('Group ' + (fallbackIndex || 1));
 }
 
 function activeKcGroup() {
@@ -2776,7 +2795,7 @@ function activeKcGroup() {
 
 function ensureKcGroups() {
   if (!kcGroups || !kcGroups.length) {
-    const g = defaultKcGroup('群組 1');
+    const g = defaultKcGroup('Group 1');
     g.id = 'g_default';
     kcGroups = [g];
   }
@@ -2810,13 +2829,13 @@ async function loadCards() {
     const r = await fetch('/api/cards');
     const d = await r.json();
     if (Array.isArray(d.card_groups) && d.card_groups.length) {
-      kcGroups        = d.card_groups;
+      kcGroups        = d.card_groups.map((g, idx) => ({...g, name: englishGroupName(g.name, idx + 1)}));
       kcActiveGroupId = d.card_active_group_id || '';
     } else {
       // Fallback for old-format response
       kcGroups = [{
         id:              'g_default',
-        name:            '群組 1',
+        name:            'Group 1',
         card_count:      d.card_count || 6,
         card_background: d.card_background || '',
         cards:           d.cards || []
@@ -2854,7 +2873,7 @@ async function saveKcCards() {
         card_active_group_id: kcActiveGroupId
       })
     });
-  } catch { toast('卡片設定儲存失敗', 'err'); }
+  } catch { toast('CardsSettingsSave failed', 'err'); }
 }
 
 function toggleCardMode() {
@@ -2926,13 +2945,13 @@ function renderTopbarCardGroups() {
       escHtml(g.name) + '</button>';
   }).join('');
 
-  const bgLabel = kcBackground ? '更換背景' : '設定背景';
+  const bgLabel = kcBackground ? 'Change background' : 'Set background';
   const ids = new Set(kcGroups.map(g => g.id));
   kcDeleteSelectedIds = new Set([...kcDeleteSelectedIds].filter(id => ids.has(id)));
   const deleteRows = kcGroups.map(g => {
     const safeId = esc(g.id);
     const checked = kcDeleteSelectedIds.has(g.id) ? ' checked' : '';
-    const activeMark = g.id === kcActiveGroupId ? '目前' : '';
+    const activeMark = g.id === kcActiveGroupId ? 'Current' : '';
     return '<label class="kcard-delete-choice' + (activeMark ? ' active' : '') + '">' +
       '<input type="checkbox" onchange="toggleKcDeleteSelection(\'' + safeId + '\', this.checked)"' + checked + '>' +
       '<span>' + escHtml(g.name) + '</span>' +
@@ -2941,43 +2960,43 @@ function renderTopbarCardGroups() {
   }).join('');
   const deletePanel = kcGroupDeleteMode
     ? '<div class="kcard-delete-panel">' +
-        '<div class="kcard-delete-help">勾選不要的群組後一次刪除。系統會至少保留一個群組。</div>' +
+        '<div class="kcard-delete-help">Select unwanted groups and delete them at once. At least one group will remain.</div>' +
         '<div class="kcard-delete-list">' + deleteRows + '</div>' +
         '<div class="kcard-delete-footer">' +
-          '<button class="kcard-pop-small" onclick="cancelKcGroupMultiDelete()">取消</button>' +
-          '<button class="kcard-pop-small danger" onclick="deleteSelectedKcGroups()">刪除勾選</button>' +
+          '<button class="kcard-pop-small" onclick="cancelKcGroupMultiDelete()">Cancel</button>' +
+          '<button class="kcard-pop-small danger" onclick="deleteSelectedKcGroups()">Delete selected</button>' +
         '</div>' +
       '</div>'
     : '';
   host.innerHTML =
     '<div class="kcard-group-tabs">' + tabsHtml + '</div>' +
     '<div class="topbar-card-actions">' +
-      '<button class="kcard-group-add" onclick="createKcGroup()" title="新增群組">＋</button>' +
+      '<button class="kcard-group-add" onclick="createKcGroup()" title="New group">+</button>' +
       '<div class="kcard-group-more-wrap">' +
-        '<button class="kcard-group-more" onclick="toggleKcGroupPopup(event)" title="群組設定">⋯</button>' +
+        '<button class="kcard-group-more" onclick="toggleKcGroupPopup(event)" title="Group settings">...</button>' +
         '<div class="kcard-group-popover hidden" id="kcardGroupPopover" onclick="event.stopPropagation()">' +
-          '<div class="kcard-pop-title">' + escHtml(active ? active.name : '群組') + '</div>' +
+          '<div class="kcard-pop-title">' + escHtml(active ? active.name : 'Group') + '</div>' +
           '<div class="kcard-pop-row">' +
-            '<span class="kcard-pop-label">卡片數量</span>' +
+            '<span class="kcard-pop-label">Card count</span>' +
             '<div class="kcard-pop-actions">' +
-              '<button class="kcard-count-btn" onclick="adjustKcCount(-1)">−</button>' +
+              '<button class="kcard-count-btn" onclick="adjustKcCount(-1)">-</button>' +
               '<span class="kcard-pop-count">' + kcCount + '</span>' +
-              '<button class="kcard-count-btn" onclick="adjustKcCount(1)">＋</button>' +
+              '<button class="kcard-count-btn" onclick="adjustKcCount(1)">+</button>' +
             '</div>' +
           '</div>' +
           '<div class="kcard-pop-row">' +
-            '<span class="kcard-pop-label">背景</span>' +
+            '<span class="kcard-pop-label">Background</span>' +
             '<div class="kcard-pop-actions">' +
               '<button class="kcard-pop-small" onclick="kcSetBackground()">' + bgLabel + '</button>' +
-              (kcBackground ? '<button class="kcard-pop-small" onclick="kcClearBackground()">清除</button>' : '') +
+              (kcBackground ? '<button class="kcard-pop-small" onclick="kcClearBackground()">Clear</button>' : '') +
             '</div>' +
           '</div>' +
           '<div class="kcard-pop-row">' +
-            '<span class="kcard-pop-label">群組</span>' +
+            '<span class="kcard-pop-label">Group</span>' +
             '<div class="kcard-pop-actions">' +
-              '<button class="kcard-pop-small" onclick="renameActiveKcGroup()">改名</button>' +
-              '<button class="kcard-pop-small danger" onclick="deleteActiveKcGroup()">刪除</button>' +
-              '<button class="kcard-pop-small danger" onclick="showKcGroupMultiDelete()">多選刪除</button>' +
+              '<button class="kcard-pop-small" onclick="renameActiveKcGroup()">Rename</button>' +
+              '<button class="kcard-pop-small danger" onclick="deleteActiveKcGroup()">Delete</button>' +
+              '<button class="kcard-pop-small danger" onclick="showKcGroupMultiDelete()">Multi-delete</button>' +
             '</div>' +
           '</div>' +
           deletePanel +
@@ -3005,7 +3024,7 @@ function renderCardMode() {
     const hasFile  = !!card.file;
     const hasThumb = !!card.thumbnail;
     const stem = hasFile ? card.file.replace(/.*[\\\/]/, '').replace(/\.[^.]+$/, '') : '';
-    const displayTitle = (card.title || stem) || ('卡片 ' + (i + 1));
+    const displayTitle = (card.title || stem) || ('Card ' + (i + 1));
     const hasVisual = hasThumb || hasFile;
     const cls = 'kcard' + (hasVisual ? ' kcard-has-visual' : ' kcard-empty');
     const thumbStyle = thumbPositionStyle(card.thumb_position);
@@ -3023,7 +3042,7 @@ function renderCardMode() {
     }
 
     const emptyHtml = !hasVisual
-      ? '<div class="kcard-empty-center"><div class="kcard-empty-icon">' + (i+1) + '</div><div class="kcard-empty-hint">點擊設定</div></div>'
+      ? '<div class="kcard-empty-center"><div class="kcard-empty-icon">' + (i+1) + '</div><div class="kcard-empty-hint">Click to set</div></div>'
       : '';
     const filenameHtml = hasFile
       ? '<div class="kcard-file">' + escHtml(card.file.replace(/.*[\\\/]/, '')) + '</div>'
@@ -3039,7 +3058,7 @@ function renderCardMode() {
         '<div class="kcard-title">' + escHtml(displayTitle) + '</div>' +
         filenameHtml +
       '</div>' +
-      '<button class="kcard-edit-btn" onclick="editKCard(event,' + i + ')" title="編輯卡片">✏</button>' +
+      '<button class="kcard-edit-btn" onclick="editKCard(event,' + i + ')" title="Edit card">Edit</button>' +
     '</div>';
   }).join('');
 
@@ -3147,7 +3166,7 @@ async function importDroppedFile(file) {
   });
   const d = await r.json().catch(() => ({}));
   if (!r.ok || !d.ok || !d.path) {
-    throw new Error(d.err || '檔案匯入失敗');
+    throw new Error(d.err || 'File import failed');
   }
   return d.path;
 }
@@ -3183,14 +3202,14 @@ async function dropFileOnKCard(e, index) {
   if (!path) {
     const file = firstDroppedFile(e.dataTransfer);
     if (!file) {
-      toast('瀏覽器沒有提供檔案路徑，請點 ✏ 進入編輯後用「選擇」設定', 'err');
+      toast('The browser did not provide a file path. Click edit and choose the file manually.', 'err');
       return;
     }
-    toast('正在匯入檔案，請稍候...');
+    toast('Importing file, please wait...');
     try {
       path = await importDroppedFile(file);
     } catch (err) {
-      toast(err.message || '檔案匯入失敗，請改用 ✏ 選擇檔案', 'err');
+      toast(err.message || 'File import failed. Use edit to choose the file instead.', 'err');
       return;
     }
   }
@@ -3208,15 +3227,15 @@ async function dropFileOnKCard(e, index) {
   };
   await saveKcCards();
   renderCardMode();
-  toast('已設定卡片 ' + (index + 1) + ' 的播放檔案', 'ok');
+  toast('Set card ' + (index + 1) + ' media file', 'ok');
 }
 
 // ── Group operations ─────────────────────────────────────────────
 function nextKcGroupName() {
   const names = new Set(kcGroups.map(g => g.name));
   let n = kcGroups.length + 1;
-  while (names.has('群組 ' + n)) n++;
-  return '群組 ' + n;
+  while (names.has('Group ' + n)) n++;
+  return 'Group ' + n;
 }
 
 async function setActiveKcGroup(id) {
@@ -3240,16 +3259,16 @@ async function createKcGroup() {
   await saveKcCards();
   renderCardMode();
   scrollKcGroupsToEnd();
-  toast('已新增「' + g.name + '」', 'ok');
+  toast('Created "' + g.name + '"', 'ok');
 }
 
 async function renameActiveKcGroup() {
   const g = activeKcGroup();
   if (!g) return;
-  const name = prompt('群組名稱（最多 30 字）', g.name);
+  const name = prompt('Group name (max 30 chars)', g.name);
   if (name === null) return;
   const trimmed = name.trim().slice(0, 30);
-  if (!trimmed) { toast('名稱不可為空', 'err'); return; }
+  if (!trimmed) { toast('Name cannot be empty', 'err'); return; }
   g.name = trimmed;
   await saveKcCards();
   renderCardMode();
@@ -3274,13 +3293,13 @@ function toggleKcDeleteSelection(id, checked) {
 
 async function deleteSelectedKcGroups() {
   const selected = kcGroups.filter(g => kcDeleteSelectedIds.has(g.id));
-  if (!selected.length) { toast('請先勾選要刪除的群組', 'err'); return; }
+  if (!selected.length) { toast('Select groups to delete first', 'err'); return; }
   if (selected.length >= kcGroups.length) {
-    toast('至少需要保留一個群組', 'err');
+    toast('At least one group must remain', 'err');
     return;
   }
   const names = selected.map(g => g.name).join('、');
-  if (!confirm('刪除 ' + selected.length + ' 個群組？\n' + names + '\n\n這些群組的卡片設定會一併移除。')) return;
+  if (!confirm('Delete ' + selected.length + ' groups？\n' + names + '\n\nCard settings in these groups will be removed too.')) return;
 
   writeActiveKcProjection();
   const selectedIds = new Set(selected.map(g => g.id));
@@ -3294,14 +3313,14 @@ async function deleteSelectedKcGroups() {
   syncActiveKcProjection();
   await saveKcCards();
   renderCardMode();
-  toast('已刪除 ' + selected.length + ' 個群組', 'ok');
+  toast('Deleted ' + selected.length + ' groups', 'ok');
 }
 
 async function deleteActiveKcGroup() {
-  if (kcGroups.length <= 1) { toast('至少需要保留一個群組', 'err'); return; }
+  if (kcGroups.length <= 1) { toast('At least one group must remain', 'err'); return; }
   const g = activeKcGroup();
   if (!g) return;
-  if (!confirm('刪除「' + g.name + '」？此群組的所有卡片設定將一併移除。')) return;
+  if (!confirm('Delete "' + g.name + '"? All card settings in this group will be removed.')) return;
   const idx = kcGroups.indexOf(g);
   kcGroups.splice(idx, 1);
   kcActiveGroupId = kcGroups[Math.max(0, idx - 1)].id;
@@ -3349,7 +3368,7 @@ function kcardPlayableKind(path) {
 
 function kcardDisplayName(card) {
   const fileName = card && card.file ? card.file.replace(/.*[\\\/]/, '') : '';
-  return (card && card.title) || fileName || '未命名卡片';
+  return (card && card.title) || fileName || 'Untitled card';
 }
 
 function kcardMediaUrl(path) {
@@ -3413,7 +3432,7 @@ function toggleKCardFullscreen() {
   if (document.fullscreenElement === player) {
     document.exitFullscreen && document.exitFullscreen();
   } else if (player.requestFullscreen) {
-    player.requestFullscreen().then(showKcPlayerControls).catch(() => toast('無法進入全螢幕', 'err'));
+    player.requestFullscreen().then(showKcPlayerControls).catch(() => toast('Could not enter fullscreen', 'err'));
   }
 }
 
@@ -3437,13 +3456,13 @@ function findAdjacentPlayableKCard(from, dir) {
 function playAdjacentKCard(dir) {
   const start = kcPlayingIndex >= 0 ? kcPlayingIndex : 0;
   const next = findAdjacentPlayableKCard(start, dir);
-  if (next < 0) { toast('此群組沒有可播放的卡片', 'err'); return; }
+  if (next < 0) { toast('This group has no playable cards', 'err'); return; }
   openKCard(next);
 }
 
 function openCurrentKCardExternal() {
   const card = kcData[kcPlayingIndex];
-  if (!card || !card.file) { toast('目前沒有播放中的卡片', 'err'); return; }
+  if (!card || !card.file) { toast('No card is currently playing', 'err'); return; }
   openFile(card.file);
 }
 
@@ -3460,7 +3479,7 @@ function editKCard(e, i) {
   document.getElementById('kcEdit-title').value = kcEditTmp.title;
   document.getElementById('kcEdit-file').value  = kcEditTmp.file;
   document.getElementById('kcEdit-thumb').value = kcEditTmp.thumbnail;
-  document.getElementById('kcModalTitle').textContent = '編輯卡片 ' + (i + 1);
+  document.getElementById('kcModalTitle').textContent = 'Edit Card ' + (i + 1);
   renderKcThumbPositionControls();
   kcUpdatePreview('thumb', kcEditTmp.thumbnail);
   document.getElementById('kcModal').classList.remove('hidden');
@@ -3517,13 +3536,13 @@ async function kcBrowse(btn, field) {
         kcUpdatePreview('bg', d.path);
       }
     }
-  } catch { toast('無法開啟選擇視窗', 'err'); }
+  } catch { toast('Could not open file picker', 'err'); }
   btn.disabled = false; btn.innerHTML = origHtml;
 }
 
 async function copyKcPath(field) {
   const value = (kcEditTmp && kcEditTmp[field]) || '';
-  if (!value) { toast('目前沒有可複製的路徑', 'err'); return; }
+  if (!value) { toast('There is no path to copy', 'err'); return; }
   try {
     if (navigator.clipboard && navigator.clipboard.writeText) {
       await navigator.clipboard.writeText(value);
@@ -3538,9 +3557,9 @@ async function copyKcPath(field) {
       document.execCommand('copy');
       ta.remove();
     }
-    toast('已複製路徑', 'ok');
+    toast('Path copied', 'ok');
   } catch {
-    toast('無法複製路徑，請手動選取文字', 'err');
+    toast('Could not copy path. Select the text manually.', 'err');
   }
 }
 
@@ -3577,7 +3596,7 @@ async function saveKcCard() {
   await saveKcCards();
   closeKcModal();
   renderCardMode();
-  toast('卡片已儲存', 'ok');
+  toast('Card saved', 'ok');
 }
 
 async function kcSetBackground() {
@@ -3591,7 +3610,7 @@ async function kcSetBackground() {
       await saveKcCards();
       renderCardMode();
     }
-  } catch { toast('無法開啟選擇視窗', 'err'); }
+  } catch { toast('Could not open file picker', 'err'); }
   kcBgPicking = false;
 }
 
@@ -3603,12 +3622,12 @@ async function kcClearBackground() {
 
 async function clearKcCard() {
   if (kcEditIndex < 0) return;
-  if (!confirm('清除卡片 ' + (kcEditIndex + 1) + ' 的所有設定？')) return;
+  if (!confirm('Clear card ' + (kcEditIndex + 1) + ' settings?')) return;
   kcData[kcEditIndex] = {id: kcEditIndex, title:'', file:'', thumbnail:'', thumb_position:'center center'};
   await saveKcCards();
   closeKcModal();
   renderCardMode();
-  toast('已清除', 'ok');
+  toast('Cleared', 'ok');
 }
 
 init();
@@ -3630,7 +3649,7 @@ if __name__ == '__main__':
 
     # ── Single-instance guard ─────────────────────────────────────────
     if port_in_use(PORT):
-        print('已有媒體啟動器正在執行，已開啟現有視窗')
+        print('MediaPlaylist is already running. Opening the existing window.')
         webbrowser.open(f'http://localhost:{PORT}')
         sys.exit(0)
 
@@ -3651,11 +3670,11 @@ if __name__ == '__main__':
     threading.Thread(target=_open_when_ready, daemon=True).start()
 
     print(f'╔══════════════════════════════╗')
-    print(f'║  🎬  媒體啟動器已啟動        ║')
+    print(f'║  🎬  MediaPlaylist is running        ║')
     print(f'║  http://localhost:{PORT}        ║')
     print(f'╚══════════════════════════════╝')
-    print(f'資料目錄：{DATA_DIR}')
-    print('按 Ctrl+C 停止')
+    print(f'Data directory: {DATA_DIR}')
+    print('Press Ctrl+C to stop')
     srv = http.server.ThreadingHTTPServer(('localhost', PORT), H)
     try: srv.serve_forever()
-    except KeyboardInterrupt: print('\n已停止')
+    except KeyboardInterrupt: print('\nStopped')

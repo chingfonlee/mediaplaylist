@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 
 .thumbs/
+imported/
 dist/
 build/_pyinstaller_work/
 build/__pycache__/
