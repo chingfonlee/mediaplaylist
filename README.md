@@ -1,12 +1,32 @@
 # MediaPlaylist
 
+A single-file local media launcher with a card-based playlist UI.  
+No installation required beyond Python — just run and open in any browser.
+
+**Choose your version / 選擇版本：**
+
+| Version | File | Language |
+|---------|------|----------|
+| English | `MediaPlaylist.py` | English UI |
+| 中文版 | `MediaPlaylist-zh.py` | 繁體中文介面 |
+
+```bash
+# English
+python MediaPlaylist.py
+
+# 中文版
+python MediaPlaylist-zh.py
+```
+
+Then open `http://localhost:8765` in your browser.
+
+---
+
 **[English](#english) | [中文](#中文)**
 
 ---
 
 ## English
-
-MediaPlaylist is a single-file local media launcher with a card-based playlist UI. It runs a small HTTP server on your machine and opens in any browser — no installation required beyond Python.
 
 ### Screenshots
 
@@ -43,8 +63,6 @@ Everything stays on your local machine. No accounts, no cloud, no internet conne
 
 ### Installation
 
-Clone or download the repository, then run:
-
 ```bash
 git clone https://github.com/chingfonlee/mediaplaylist.git
 cd mediaplaylist
@@ -53,7 +71,7 @@ python MediaPlaylist.py
 
 The browser opens automatically at `http://localhost:8765`.
 
-No virtual environment or `pip install` is needed for basic use. If you want richer thumbnails, install the optional packages:
+If you want richer thumbnails, install the optional packages:
 
 ```bash
 pip install pillow pymupdf
@@ -68,13 +86,11 @@ pip install pillow pymupdf
 
 ### Configuration
 
-Settings are saved automatically to `config.json` in the same folder (development mode) or `%APPDATA%\MediaPlaylist\` (when packaged as an exe). No manual editing is needed.
+Settings are saved automatically to `config.json` in the same folder (development mode) or `%APPDATA%\MediaPlaylist\` (when packaged as an exe).
 
 ---
 
 ## 中文
-
-MediaPlaylist 是一個單檔本地媒體播放器，採用卡片式播放清單介面。它在你的電腦上啟動一個小型 HTTP 伺服器，用任何瀏覽器開啟即可使用，除了 Python 之外不需要安裝任何東西。
 
 ### 截圖
 
@@ -111,17 +127,15 @@ MediaPlaylist 是一個單檔本地媒體播放器，採用卡片式播放清單
 
 ### 安裝方式
 
-下載或 clone 此 repo，然後執行：
-
 ```bash
 git clone https://github.com/chingfonlee/mediaplaylist.git
 cd mediaplaylist
-python MediaPlaylist.py
+python MediaPlaylist-zh.py
 ```
 
 程式啟動後會自動在瀏覽器開啟 `http://localhost:8765`。
 
-基本使用不需要 virtual environment 或 `pip install`。若需要更豐富的縮圖功能，可安裝選用套件：
+若需要更豐富的縮圖功能，可安裝選用套件：
 
 ```bash
 pip install pillow pymupdf
@@ -137,10 +151,8 @@ pip install pillow pymupdf
 ### 設定儲存位置
 
 設定會自動儲存：
-- 開發模式（直接執行 .py）：與 `MediaPlaylist.py` 同一資料夾的 `config.json`
+- 開發模式（直接執行 .py）：與 `MediaPlaylist-zh.py` 同一資料夾的 `config.json`
 - 打包成 exe 後：`%APPDATA%\MediaPlaylist\config.json`
-
-不需要手動編輯設定檔。
 
 ---
 
