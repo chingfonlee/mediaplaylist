@@ -14,10 +14,6 @@ MediaPlaylist is a single-file local media launcher with a card-based playlist U
 
 ![Card mode](docs/screenshots/01-card-mode.png)
 
-**Media browser** — switch to this view to scan folders and browse files by type
-
-![Media browser](docs/screenshots/02-media-browser.png)
-
 ### What it does
 
 You create **groups** of **cards**. Each card holds one media file: a video, audio track, image, PDF, or document. Click a card to play it. Drag a file from your file manager onto a card to assign it instantly.
@@ -85,10 +81,6 @@ MediaPlaylist 是一個單檔本地媒體播放器，採用卡片式播放清單
 **卡片模式** — 群組顯示在頂欄，每張卡片對應一個媒體檔案
 
 ![卡片模式](docs/screenshots/01-card-mode.png)
-
-**媒體瀏覽器** — 切換到此模式可掃描資料夾、依類型篩選媒體
-
-![媒體瀏覽器](docs/screenshots/02-media-browser.png)
 
 ### 這個程式做什麼
 
